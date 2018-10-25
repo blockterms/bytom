@@ -7,6 +7,12 @@ Bytom
 
 Automated builds are available for stable releases and the unstable master branch. Binary archives are published at https://github.com/Bytom/bytom/releases.
 
+## What is new in this fork?
+
+This fork implements address watching with callback feature.
+
+If a tx is made to an address, you can register a callback url that will be called when ever a new tx is made to this address.
+
 ## What is Bytom?
 
 Bytom is software designed to operate and connect to highly scalable blockchain networks confirming to the Bytom Blockchain Protocol, which allows partipicants to define, issue and transfer digitial assets on a multi-asset shared ledger. Please refer to the [White Paper](https://github.com/Bytom/wiki/blob/master/White-Paper/%E6%AF%94%E5%8E%9F%E9%93%BE%E6%8A%80%E6%9C%AF%E7%99%BD%E7%9A%AE%E4%B9%A6-%E8%8B%B1%E6%96%87%E7%89%88.md) for more details.

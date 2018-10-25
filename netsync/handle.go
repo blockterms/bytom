@@ -9,10 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/tendermint/go-crypto"
-	cmn "github.com/tendermint/tmlibs/common"
-
+	"github.com/bytom/addresscallbacks"
 	cfg "github.com/bytom/config"
 	"github.com/bytom/consensus"
 	"github.com/bytom/p2p"
@@ -21,6 +18,9 @@ import (
 	"github.com/bytom/protocol/bc"
 	"github.com/bytom/protocol/bc/types"
 	"github.com/bytom/version"
+	log "github.com/sirupsen/logrus"
+	"github.com/tendermint/go-crypto"
+	cmn "github.com/tendermint/tmlibs/common"
 )
 
 const (
@@ -62,10 +62,12 @@ type SyncManager struct {
 	txSyncCh   chan *txSyncMsg
 	quitSync   chan struct{}
 	config     *cfg.Config
+	txListener *addresscallbacks.TxListener
 }
 
 //NewSyncManager create a sync manager
-func NewSyncManager(config *cfg.Config, chain Chain, txPool *core.TxPool, newBlockCh chan *bc.Hash) (*SyncManager, error) {
+func NewSyncManager(config *cfg.Config, chain Chain, txPool *core.TxPool,
+	newBlockCh chan *bc.Hash, txListener *addresscallbacks.TxListener) (*SyncManager, error) {
 	genesisHeader, err := chain.GetHeaderByHeight(0)
 	if err != nil {
 		return nil, err
@@ -73,6 +75,7 @@ func NewSyncManager(config *cfg.Config, chain Chain, txPool *core.TxPool, newBlo
 
 	sw := p2p.NewSwitch(config)
 	peers := newPeerSet(sw)
+
 	manager := &SyncManager{
 		sw:           sw,
 		genesisHash:  genesisHeader.Hash(),
@@ -87,6 +90,7 @@ func NewSyncManager(config *cfg.Config, chain Chain, txPool *core.TxPool, newBlo
 		txSyncCh:     make(chan *txSyncMsg),
 		quitSync:     make(chan struct{}),
 		config:       config,
+		txListener:   txListener,
 	}
 
 	protocolReactor := NewProtocolReactor(manager, manager.peers)
@@ -336,7 +340,6 @@ func (sm *SyncManager) handleStatusResponseMsg(basePeer BasePeer, msg *StatusRes
 		}).Warn("fail hand shake due to differnt genesis")
 		return
 	}
-
 	sm.peers.addPeer(basePeer, msg.Height, msg.GetHash())
 }
 
@@ -346,9 +349,12 @@ func (sm *SyncManager) handleTransactionMsg(peer *peer, msg *TransactionMessage)
 		sm.peers.addBanScore(peer.ID(), 0, 10, "fail on get tx from message")
 		return
 	}
-
-	if isOrphan, err := sm.chain.ValidateTx(tx); err != nil && isOrphan == false {
+	isOrphan, err := sm.chain.ValidateTx(tx)
+	if err != nil && isOrphan == false {
 		sm.peers.addBanScore(peer.ID(), 10, 0, "fail on validate tx transaction")
+	}
+	if err == nil {
+		sm.txListener.TxCh <- tx
 	}
 }
 

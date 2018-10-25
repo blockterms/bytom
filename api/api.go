@@ -7,11 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kr/secureheader"
-	log "github.com/sirupsen/logrus"
-	cmn "github.com/tendermint/tmlibs/common"
-
 	"github.com/bytom/accesstoken"
+	"github.com/bytom/addresscallbacks"
 	"github.com/bytom/blockchain/txfeed"
 	cfg "github.com/bytom/config"
 	"github.com/bytom/dashboard"
@@ -27,6 +24,9 @@ import (
 	"github.com/bytom/protocol"
 	"github.com/bytom/protocol/bc"
 	"github.com/bytom/wallet"
+	"github.com/kr/secureheader"
+	log "github.com/sirupsen/logrus"
+	cmn "github.com/tendermint/tmlibs/common"
 )
 
 var (
@@ -107,6 +107,7 @@ type API struct {
 	sync          *netsync.SyncManager
 	wallet        *wallet.Wallet
 	accessTokens  *accesstoken.CredentialStore
+	callbackStore *addresscallbacks.CallbackStore
 	chain         *protocol.Chain
 	server        *http.Server
 	handler       http.Handler
@@ -168,12 +169,22 @@ func (a *API) StartServer(address string) {
 }
 
 // NewAPI create and initialize the API
-func NewAPI(sync *netsync.SyncManager, wallet *wallet.Wallet, txfeeds *txfeed.Tracker, cpuMiner *cpuminer.CPUMiner, miningPool *miningpool.MiningPool, chain *protocol.Chain, config *cfg.Config, token *accesstoken.CredentialStore, newBlockCh chan *bc.Hash) *API {
+func NewAPI(sync *netsync.SyncManager,
+	wallet *wallet.Wallet,
+	txfeeds *txfeed.Tracker,
+	cpuMiner *cpuminer.CPUMiner,
+	miningPool *miningpool.MiningPool,
+	chain *protocol.Chain,
+	config *cfg.Config,
+	token *accesstoken.CredentialStore,
+	newBlockCh chan *bc.Hash,
+	cbStore *addresscallbacks.CallbackStore) *API {
 	api := &API{
 		sync:          sync,
 		wallet:        wallet,
 		chain:         chain,
 		accessTokens:  token,
+		callbackStore: cbStore,
 		txFeedTracker: txfeeds,
 		cpuMiner:      cpuMiner,
 		miningPool:    miningPool,
@@ -205,6 +216,10 @@ func (a *API) buildHandler() {
 		m.Handle("/list-addresses", jsonHandler(a.listAddresses))
 		m.Handle("/validate-address", jsonHandler(a.validateAddress))
 		m.Handle("/list-pubkeys", jsonHandler(a.listPubKeys))
+
+		m.Handle("/add-address-callback", jsonHandler(a.addAddressCallback))
+		m.Handle("/list-address-callbacks", jsonHandler(a.listAddressCallbacks))
+		m.Handle("/remove-address-callback", jsonHandler(a.removeAddressCallback))
 
 		m.Handle("/get-mining-address", jsonHandler(a.getMiningAddress))
 		m.Handle("/set-mining-address", jsonHandler(a.setMiningAddress))

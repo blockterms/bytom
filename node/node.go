@@ -9,14 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/prometheus/prometheus/util/flock"
-	log "github.com/sirupsen/logrus"
-	cmn "github.com/tendermint/tmlibs/common"
-	dbm "github.com/tendermint/tmlibs/db"
-	browser "github.com/toqueteos/webbrowser"
-
 	"github.com/bytom/accesstoken"
 	"github.com/bytom/account"
+	"github.com/bytom/addresscallbacks"
 	"github.com/bytom/api"
 	"github.com/bytom/asset"
 	"github.com/bytom/blockchain/pseudohsm"
@@ -32,6 +27,11 @@ import (
 	"github.com/bytom/protocol"
 	"github.com/bytom/protocol/bc"
 	w "github.com/bytom/wallet"
+	"github.com/prometheus/prometheus/util/flock"
+	log "github.com/sirupsen/logrus"
+	cmn "github.com/tendermint/tmlibs/common"
+	dbm "github.com/tendermint/tmlibs/db"
+	browser "github.com/toqueteos/webbrowser"
 )
 
 const (
@@ -48,14 +48,15 @@ type Node struct {
 	syncManager *netsync.SyncManager
 
 	//bcReactor    *bc.BlockchainReactor
-	wallet       *w.Wallet
-	accessTokens *accesstoken.CredentialStore
-	api          *api.API
-	chain        *protocol.Chain
-	txfeed       *txfeed.Tracker
-	cpuMiner     *cpuminer.CPUMiner
-	miningPool   *miningpool.MiningPool
-	miningEnable bool
+	wallet        *w.Wallet
+	accessTokens  *accesstoken.CredentialStore
+	callbackStore *addresscallbacks.CallbackStore
+	api           *api.API
+	chain         *protocol.Chain
+	txfeed        *txfeed.Tracker
+	cpuMiner      *cpuminer.CPUMiner
+	miningPool    *miningpool.MiningPool
+	miningEnable  bool
 
 	newBlockCh chan *bc.Hash
 }
@@ -78,6 +79,9 @@ func NewNode(config *cfg.Config) *Node {
 
 	tokenDB := dbm.NewDB("accesstoken", config.DBBackend, config.DBDir())
 	accessTokens := accesstoken.NewStore(tokenDB)
+
+	callbackDB := dbm.NewDB("callbacks", config.DBBackend, config.DBDir())
+	callbackStore := addresscallbacks.NewStore(callbackDB)
 
 	txPool := protocol.NewTxPool(store)
 	chain, err := protocol.NewChain(store, txPool)
@@ -118,8 +122,8 @@ func NewNode(config *cfg.Config) *Node {
 		}
 	}
 	newBlockCh := make(chan *bc.Hash, maxNewBlockChSize)
-
-	syncManager, _ := netsync.NewSyncManager(config, chain, txPool, newBlockCh)
+	newTxListener := addresscallbacks.NewTxListener(config, callbackStore)
+	syncManager, _ := netsync.NewSyncManager(config, chain, txPool, newBlockCh, newTxListener)
 
 	// get transaction from txPool and send it to syncManager and wallet
 	go newPoolTxListener(txPool, syncManager, wallet)
@@ -137,13 +141,14 @@ func NewNode(config *cfg.Config) *Node {
 	}
 
 	node := &Node{
-		config:       config,
-		syncManager:  syncManager,
-		accessTokens: accessTokens,
-		wallet:       wallet,
-		chain:        chain,
-		txfeed:       txFeed,
-		miningEnable: config.Mining,
+		config:        config,
+		syncManager:   syncManager,
+		accessTokens:  accessTokens,
+		callbackStore: callbackStore,
+		wallet:        wallet,
+		chain:         chain,
+		txfeed:        txFeed,
+		miningEnable:  config.Mining,
 
 		newBlockCh: newBlockCh,
 	}
@@ -229,7 +234,7 @@ func launchWebBrowser(port string) {
 }
 
 func (n *Node) initAndstartApiServer() {
-	n.api = api.NewAPI(n.syncManager, n.wallet, n.txfeed, n.cpuMiner, n.miningPool, n.chain, n.config, n.accessTokens, n.newBlockCh)
+	n.api = api.NewAPI(n.syncManager, n.wallet, n.txfeed, n.cpuMiner, n.miningPool, n.chain, n.config, n.accessTokens, n.newBlockCh, n.callbackStore)
 
 	listenAddr := env.String("LISTEN", n.config.ApiAddress)
 	env.Parse()
