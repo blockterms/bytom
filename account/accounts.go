@@ -32,6 +32,7 @@ const (
 	// HardenedKeyStart bip32 hierarchical deterministic wallets
 	// keys with index ≥ 0x80000000 are hardened keys
 	HardenedKeyStart = 0x80000000
+	logModule        = "account"
 )
 
 var (
@@ -314,6 +315,9 @@ func (m *Manager) deleteAccountControlPrograms(accountID string) error {
 			m.db.Delete(ContractKey(hash))
 		}
 	}
+	m.db.Delete(bip44ContractIndexKey(accountID, false))
+	m.db.Delete(bip44ContractIndexKey(accountID, true))
+	m.db.Delete(contractIndexKey(accountID))
 	return nil
 }
 
